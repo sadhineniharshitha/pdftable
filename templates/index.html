@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Data Extractor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📄 Scanned PDF Data Extractor</h1>
+            <p class="subtitle">Extract text and data from scanned PDFs using OCR</p>
+        </header>
+
+        <main>
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <div class="upload-box" id="uploadBox">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <h2>Drop your PDF here</h2>
+                    <p>or click to browse</p>
+                    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.bmp,.tiff" hidden>
+                </div>
+                
+                <div class="button-group">
+                    <button id="extractBtn" class="btn btn-primary" disabled>
+                        🔍 Extract Text
+                    </button>
+                    <button id="extractTableBtn" class="btn btn-secondary" disabled>
+                        📊 Extract Tables
+                    </button>
+                    <button id="extractAllBtn" class="btn btn-success" disabled>
+                        ⭐ Extract Everything
+                    </button>
+                </div>
+            </section>
+
+            <!-- Loading Indicator -->
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Processing your file...</p>
+            </div>
+
+            <!-- Results Section -->
+            <section id="resultsSection" class="results-section hidden">
+                <div class="results-header">
+                    <h2>Extracted Data</h2>
+                    <button id="copyBtn" class="btn-icon" title="Copy to clipboard">📋</button>
+                    <button id="downloadBtn" class="btn-icon" title="Download as text">⬇️</button>
+                    <button id="clearBtn" class="btn-icon" title="Clear results">✕</button>
+                </div>
+
+                <!-- Text Results -->
+                <div id="textResults" class="results-content hidden">
+                    <h3>Extracted Text</h3>
+                    <div id="textOutput" class="output-box"></div>
+                </div>
+
+                <!-- Table Results -->
+                <div id="tableResults" class="results-content hidden">
+                    <h3>Extracted Tables</h3>
+                    <div id="tableOutput" class="table-container"></div>
+                </div>
+
+                <!-- Comprehensive Results -->
+                <div id="comprehensiveResults" class="results-content hidden">
+                    <h3>📋 Comprehensive Extraction</h3>
+                    
+                    <!-- Metadata Section -->
+                    <div id="metadataSection" class="section-box hidden">
+                        <h4>📝 Document Metadata</h4>
+                        <div id="metadataOutput" class="metadata-grid"></div>
+                    </div>
+
+                    <!-- Statistics Section -->
+                    <div id="statisticsSection" class="section-box hidden">
+                        <h4>📊 Extraction Statistics</h4>
+                        <div id="statisticsOutput" class="stats-grid"></div>
+                    </div>
+
+                    <!-- Pages Navigation -->
+                    <div id="pagesSection" class="section-box hidden">
+                        <h4>🖼️ Pages</h4>
+                        <div class="pages-nav">
+                            <button id="prevPageBtn" class="btn-small">← Previous</button>
+                            <span id="pageIndicator" class="page-indicator">Page 1 of 1</span>
+                            <button id="nextPageBtn" class="btn-small">Next →</button>
+                        </div>
+                        
+                        <!-- Page Content -->
+                        <div id="currentPageContent" class="page-content">
+                            <div id="pageImage" class="page-image hidden">
+                                <img id="pageImageEl" src="" alt="PDF page">
+                            </div>
+                            
+                            <div id="pageText" class="page-text hidden">
+                                <h5>Page Text Content</h5>
+                                <div id="pageTextOutput" class="output-box"></div>
+                            </div>
+                            
+                            <div id="pageTable" class="page-table hidden">
+                                <h5>Page Table Data</h5>
+                                <div id="pageTableOutput" class="table-container"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Download Options -->
+                    <div id="downloadSection" class="section-box">
+                        <h4>⬇️ Download Options</h4>
+                        <div class="download-buttons">
+                            <button id="downloadJsonBtn" class="btn-small">📥 JSON</button>
+                            <button id="downloadTextBtn" class="btn-small">📄 Text</button>
+                            <button id="downloadCsvBtn" class="btn-small">📊 CSV</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- File Info -->
+                <div class="file-info">
+                    <p><strong>File:</strong> <span id="fileName"></span></p>
+                    <p><strong>Pages:</strong> <span id="pageCount"></span></p>
+                </div>
+            </section>
+
+            <!-- Error Section -->
+            <div id="errorSection" class="error-section hidden">
+                <div class="error-box">
+                    <h3>⚠️ Error</h3>
+                    <p id="errorMessage"></p>
+                    <button id="dismissError" class="btn btn-small">Dismiss</button>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by Tesseract OCR • Flask</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
