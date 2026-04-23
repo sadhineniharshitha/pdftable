@@ -1,229 +1,149 @@
-import pytesseract
-from pdf2image import convert_from_path
-from PIL import Image
+import fitz  # PyMuPDF only
+import base64
 import os
 import re
-import sys
-import io
-import base64
 from datetime import datetime
 
-try:
-    import PyPDF2
-    HAS_PYPDF2 = True
-except ImportError:
-    HAS_PYPDF2 = False
 
-# Try to find poppler in common locations
-poppler_paths = [
-    r"C:\poppler\Library\bin",
-    r"C:\Program Files\poppler\Library\bin",
-    r"C:\Program Files (x86)\poppler\Library\bin",
-    os.path.join(os.path.expanduser('~'), 'AppData', 'Local', 'poppler', 'Release-24.08.0', 'Library', 'bin'),
-]
+def page_to_base64(pdf_path, page_index):
+    doc = fitz.open(pdf_path)
+    page = doc[page_index]
+    pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+    img_bytes = pix.tobytes("png")
+    doc.close()
+    return base64.standard_b64encode(img_bytes).decode("utf-8")
 
-def setup_poppler():
-    """Setup poppler path if it exists in common locations"""
-    for path in poppler_paths:
-        if os.path.exists(path):
-            os.environ['PATH'] = path + os.pathsep + os.environ['PATH']
-            return True
-    return False
 
-setup_poppler()
+def extract_text_all_methods(page):
+    """Try every PyMuPDF method to get maximum text from a page."""
+    results = []
+
+    # Method 1: plain text
+    t1 = page.get_text("text").strip()
+    if t1: results.append(t1)
+
+    # Method 2: blocks (gets more from complex layouts)
+    blocks = page.get_text("blocks")
+    t2 = "\n".join([b[4].strip() for b in blocks if b[4].strip()])
+    if t2 and t2 not in results: results.append(t2)
+
+    # Method 3: words (catches text missed by other methods)
+    words = page.get_text("words")
+    t3 = " ".join([w[4] for w in words if w[4].strip()])
+    if t3 and len(t3) > len(max(results, default="", key=len)):
+        results.append(t3)
+
+    # Return the longest result (most complete)
+    return max(results, default="", key=len)
+
 
 class PDFExtractor:
-    def __init__(self, tesseract_path=None):
-        """Initialize the PDF extractor with optional Tesseract path"""
-        if tesseract_path:
-            pytesseract.pytesseract.pytesseract_cmd = tesseract_path
-    
+
     def extract_metadata(self, pdf_path):
-        """Extract PDF metadata"""
         try:
-            if not HAS_PYPDF2:
-                return {}
-            
-            metadata = {}
-            with open(pdf_path, 'rb') as f:
-                reader = PyPDF2.PdfReader(f)
-                if reader.metadata:
-                    metadata = {
-                        'title': reader.metadata.get('/Title', 'N/A'),
-                        'author': reader.metadata.get('/Author', 'N/A'),
-                        'subject': reader.metadata.get('/Subject', 'N/A'),
-                        'creator': reader.metadata.get('/Creator', 'N/A'),
-                        'producer': reader.metadata.get('/Producer', 'N/A'),
-                        'created': str(reader.metadata.get('/CreationDate', 'N/A')),
-                        'modified': str(reader.metadata.get('/ModDate', 'N/A')),
-                    }
-            return metadata
+            doc = fitz.open(pdf_path)
+            meta = doc.metadata
+            result = {
+                "title":        meta.get("title")    or "N/A",
+                "author":       meta.get("author")   or "N/A",
+                "subject":      meta.get("subject")  or "N/A",
+                "creator":      meta.get("creator")  or "N/A",
+                "producer":     meta.get("producer") or "N/A",
+                "total_pages":  len(doc),
+                "file_size_mb": round(os.path.getsize(pdf_path) / (1024 * 1024), 2),
+                "extracted_at": datetime.now().isoformat()
+            }
+            doc.close()
+            return result
         except Exception as e:
-            return {'error': str(e)}
-    
-    def extract_images_from_pdf(self, pdf_path):
-        """Extract images from PDF pages"""
-        try:
-            images = convert_from_path(pdf_path)
-            images_data = []
-            
-            for page_num, image in enumerate(images, 1):
-                # Convert PIL image to base64
-                buffered = io.BytesIO()
-                image.save(buffered, format="PNG")
-                img_base64 = base64.b64encode(buffered.getvalue()).decode()
-                
-                images_data.append({
-                    'page': page_num,
-                    'image': f'data:image/png;base64,{img_base64}',
-                    'width': image.width,
-                    'height': image.height,
-                    'format': 'PNG'
-                })
-            
-            return {
-                'success': True,
-                'images': images_data,
-                'total_pages': len(images)
-            }
-        except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    def extract_everything(self, pdf_path):
-        """Comprehensive extraction: text, tables, images, metadata"""
-        try:
-            images = convert_from_path(pdf_path)
-            all_data = {
-                'success': True,
-                'pages': [],
-                'metadata': self.extract_metadata(pdf_path),
-                'total_pages': len(images),
-                'file_size_mb': os.path.getsize(pdf_path) / (1024 * 1024),
-                'extraction_time': datetime.now().isoformat()
-            }
-            
-            for page_num, image in enumerate(images, 1):
-                page_data = {
-                    'page_number': page_num,
-                    'text': '',
-                    'tables': [],
-                    'image': None,
-                    'statistics': {
-                        'text_length': 0,
-                        'lines': 0,
-                        'tables_count': 0
-                    }
-                }
-                
-                # Extract text using OCR
-                text = pytesseract.image_to_string(image)
-                page_data['text'] = text
-                page_data['statistics']['text_length'] = len(text)
-                page_data['statistics']['lines'] = len([l for l in text.split('\n') if l.strip()])
-                
-                # Extract tables
-                lines = text.strip().split('\n')
-                table_rows = []
-                for line in lines:
-                    if line.strip():
-                        cells = re.split(r'\s{2,}', line.strip())
-                        if len(cells) > 1:
-                            table_rows.append(cells)
-                
-                if table_rows:
-                    page_data['tables'] = table_rows
-                    page_data['statistics']['tables_count'] = 1
-                
-                # Convert image to base64
-                buffered = io.BytesIO()
-                image.save(buffered, format="PNG")
-                img_base64 = base64.b64encode(buffered.getvalue()).decode()
-                page_data['image'] = f'data:image/png;base64,{img_base64}'
-                
-                all_data['pages'].append(page_data)
-            
-            return all_data
-        
-        except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
+            return {"error": str(e)}
+
+    def _get_page_text(self, pdf_path, page_index):
+        doc = fitz.open(pdf_path)
+        page = doc[page_index]
+        text = extract_text_all_methods(page)
+        doc.close()
+
+        if len(text) > 10:
+            return text, "native"
+        return "(Scanned/handwritten page — see image on the right)", "image-only"
+
     def extract_from_pdf(self, pdf_path):
-        """Extract text from a scanned PDF"""
         try:
-            # Convert PDF to images
-            images = convert_from_path(pdf_path)
-            extracted_text = ""
-            
-            for page_num, image in enumerate(images, 1):
-                # Extract text using OCR
-                text = pytesseract.image_to_string(image)
-                extracted_text += f"--- PAGE {page_num} ---\n{text}\n\n"
-            
-            return {
-                "success": True,
-                "text": extracted_text,
-                "pages": len(images)
-            }
+            doc = fitz.open(pdf_path)
+            total = len(doc)
+            doc.close()
+            full_text = ""
+            for i in range(total):
+                print(f"  Processing page {i+1}/{total}...")
+                text, method = self._get_page_text(pdf_path, i)
+                label = f"PAGE {i+1}" + (" [scanned]" if method == "image-only" else "")
+                full_text += f"--- {label} ---\n{text}\n\n"
+            return {"success": True, "text": full_text, "pages": total}
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    def extract_tables_from_pdf(self, pdf_path):
-        """Extract table-like data from scanned PDF"""
+            return {"success": False, "error": str(e)}
+
+    def extract_everything(self, pdf_path):
         try:
-            images = convert_from_path(pdf_path)
-            tables_data = []
-            
-            for page_num, image in enumerate(images, 1):
-                text = pytesseract.image_to_string(image)
-                lines = text.strip().split('\n')
-                
-                # Parse lines as table rows
+            doc = fitz.open(pdf_path)
+            total = len(doc)
+            doc.close()
+            all_data = {
+                "success": True,
+                "metadata": self.extract_metadata(pdf_path),
+                "total_pages": total,
+                "pages": [],
+                "extraction_time": datetime.now().isoformat()
+            }
+            for i in range(total):
+                print(f"  Processing page {i+1}/{total}...")
+                b64 = page_to_base64(pdf_path, i)
+                text, method = self._get_page_text(pdf_path, i)
                 table_rows = []
-                for line in lines:
+                for line in text.split("\n"):
                     if line.strip():
-                        # Split by multiple spaces (common in scanned tables)
-                        cells = re.split(r'\s{2,}', line.strip())
+                        cells = re.split(r"\s{2,}", line.strip())
                         if len(cells) > 1:
                             table_rows.append(cells)
-                
-                if table_rows:
-                    tables_data.append({
-                        "page": page_num,
-                        "rows": table_rows
-                    })
-            
-            return {
-                "success": True,
-                "tables": tables_data,
-                "pages": len(images)
-            }
+                all_data["pages"].append({
+                    "page_number": i + 1,
+                    "method": method,
+                    "text": text,
+                    "tables": table_rows,
+                    "image": f"data:image/png;base64,{b64}",
+                    "statistics": {
+                        "text_length": len(text),
+                        "lines": len([l for l in text.split("\n") if l.strip()]),
+                        "tables_count": 1 if table_rows else 0
+                    }
+                })
+            return all_data
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    def extract_from_image(self, image_path):
-        """Extract text from an image directly"""
+            return {"success": False, "error": str(e)}
+
+    def extract_tables_from_pdf(self, pdf_path):
         try:
-            image = Image.open(image_path)
-            text = pytesseract.image_to_string(image)
-            
-            return {
-                "success": True,
-                "text": text
-            }
+            doc = fitz.open(pdf_path)
+            total = len(doc)
+            doc.close()
+            tables_data = []
+            for i in range(total):
+                print(f"  Processing page {i+1}/{total}...")
+                text, _ = self._get_page_text(pdf_path, i)
+                table_rows = []
+                for line in text.split("\n"):
+                    if line.strip():
+                        cells = re.split(r"\s{2,}", line.strip())
+                        if len(cells) > 1:
+                            table_rows.append(cells)
+                if table_rows:
+                    tables_data.append({"page": i + 1, "rows": table_rows})
+            return {"success": True, "tables": tables_data, "pages": total}
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
+
+    def extract_from_image(self, image_path):
+        try:
+            return {"success": True, "text": "(Image file — see UI to view)"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}

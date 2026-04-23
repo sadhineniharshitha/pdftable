@@ -1,7 +1,6 @@
-Flask
-Flask-CORS
-pytesseract
-pdf2image
-Pillow
-python-dotenv
-PyPDF2
+flask
+flask-cors
+pymupdf
+anthropic
+werkzeug
+pillow
