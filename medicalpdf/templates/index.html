@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PDF Table Extractor</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #f4f6f9; padding: 40px; }
+    h1 { text-align: center; color: #0d7377; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+    td, th { border: 1px solid #ccc; padding: 8px; }
+    .page-label { font-weight: bold; margin: 10px 0; color: #0d7377; }
+    #loading { display: none; color: #0d7377; font-weight: bold; margin: 10px 0; }
+    #error { color: red; font-weight: bold; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>📄 PDF Table Extractor</h1>
+
+  <!-- Upload -->
+  <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.bmp,.tiff"/>
+  <button id="btnExtract">Extract</button>
+
+  <!-- Feedback -->
+  <div id="loading">⏳ Extracting text, please wait...</div>
+  <div id="error"></div>
+
+  <!-- Results -->
+  <div id="result"></div>
+
+  <script>
+    const btn = document.getElementById('btnExtract');
+    const fileInput = document.getElementById('fileInput');
+    const resultDiv = document.getElementById('result');
+    const loading = document.getElementById('loading');
+    const errorDiv = document.getElementById('error');
+
+    // Detect backend URL automatically
+    const backendBase = window.location.origin;
+
+    btn.addEventListener('click', async () => {
+      const f = fileInput.files[0];
+      if (!f) { alert("Select a file first"); return; }
+
+      const fd = new FormData();
+      fd.append('file', f);
+
+      // Reset UI
+      resultDiv.innerHTML = '';
+      errorDiv.textContent = '';
+      loading.style.display = 'block';
+
+      try {
+        const res = await fetch(`${backendBase}/api/extract`, { method: 'POST', body: fd });
+        const data = await res.json();
+
+        loading.style.display = 'none';
+
+        if (!data.success) {
+          errorDiv.textContent = "❌ Error: " + (data.error || "Extraction failed");
+          return;
+        }
+
+        data.pages.forEach(p => {
+          const label = document.createElement('div');
+          label.className = 'page-label';
+          label.textContent = "Page " + p.page;
+          resultDiv.appendChild(label);
+
+          const table = document.createElement('table');
+          (p.rows || []).forEach(row => {
+            const tr = document.createElement('tr');
+            row.forEach(cell => {
+              const td = document.createElement('td');
+              td.textContent = cell;
+              tr.appendChild(td);
+            });
+            table.appendChild(tr);
+          });
+          resultDiv.appendChild(table);
+        });
+      } catch (err) {
+        loading.style.display = 'none';
+        errorDiv.textContent = "❌ Error: " + err.message;
+      }
+    });
+  </script>
+</body>
+</html>
